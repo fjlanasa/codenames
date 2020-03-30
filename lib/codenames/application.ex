@@ -11,9 +11,10 @@ defmodule Codenames.Application do
       # Start the Ecto repository
       Codenames.Repo,
       # Start the endpoint when the application starts
-      CodenamesWeb.Endpoint
+      CodenamesWeb.Endpoint,
       # Starts a worker by calling: Codenames.Worker.start_link(arg)
       # {Codenames.Worker, arg},
+      Codenames.Words
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
