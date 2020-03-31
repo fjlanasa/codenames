@@ -6,6 +6,8 @@ defmodule Codenames.Game do
     field :channel, :string
     field :blue_player_id, :id
     field :red_player_id, :id
+    field :first, :string
+    field :next, :string
 
     timestamps()
   end
@@ -13,7 +15,9 @@ defmodule Codenames.Game do
   @doc false
   def changeset(game, attrs) do
     game
-    |> cast(attrs, [:channel])
-    |> validate_required([:channel])
+    |> cast(attrs, [:channel, :first, :next])
+    |> validate_required([:channel, :first])
+    |> validate_inclusion(:first, ["BLUE", "RED"])
+    |> validate_inclusion(:next, ["BLUE", "RED"])
   end
 end

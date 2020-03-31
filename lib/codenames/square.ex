@@ -9,6 +9,7 @@ defmodule Codenames.Square do
     field :type, :string
     field :word, :string
     field :game, :id
+    field :picked_by, :string
 
     timestamps()
   end
@@ -20,5 +21,6 @@ defmodule Codenames.Square do
     |> validate_required([:word, :type, :picked, :row, :column])
     |> validate_inclusion(:column, ["A", "B", "C", "D", "E"])
     |> validate_inclusion(:row, ["1", "2", "3", "4", "5"])
+    |> validate_inclusion(:picked_by, ["BLUE", "RED"])
   end
 end
