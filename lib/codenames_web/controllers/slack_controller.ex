@@ -18,17 +18,7 @@ defmodule CodenamesWeb.SlackController do
 
   defp do_handle_message(
          %{
-           "channel_id" => _channel_id,
-           "channel_name" => _channel_name,
-           "command" => _command,
-           "response_url" => _response_url,
-           "team_domain" => _team_domain,
-           "team_id" => _team_id,
-           "text" => text,
-           "token" => _token,
-           "trigger_id" => _trigger_id,
-           "user_id" => _user_id,
-           "user_name" => _user_name
+           "text" => text
          } = params
        ) do
     with {:ok, {subcommand, args}} <- parse_message(text),
@@ -64,7 +54,7 @@ defmodule CodenamesWeb.SlackController do
          true <- Enum.empty?(tail) || String.upcase(List.first(tail)) in @teams do
       {:ok,
        Enum.map([blue_player_id, red_player_id], fn x ->
-         String.split(x, "|") |> List.first() |> String.slice(1..-1)
+         String.split(x, "|") |> List.first() |> String.slice(2..-1)
        end) ++ if(Enum.empty?(tail), do: ["BLUE"], else: [String.upcase(List.first(tail))])}
     else
       _ ->
@@ -113,10 +103,29 @@ defmodule CodenamesWeb.SlackController do
     {:ok, blue_player} = Player.find_or_create("slack", blue_player_id)
     {:ok, red_player} = Player.find_or_create("slack", red_player_id)
 
-    case Game.new(blue_player.id, red_player.id, "slack", channel_id, first) do
-      {:ok, game} ->
-        gen_and_send_status(game)
-
+    with {:ok, game} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
+         {:ok, res} <-
+           CodenamesWeb.SlackClient.open_conversation([blue_player_id, red_player_id]),
+         {:ok, _} <-
+           CodenamesWeb.SlackClient.upload_file(
+             gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+             "Here is the key for game #{game.id}",
+             Jason.decode!(res.body)["channel"]["id"]
+           ),
+         {:ok, res} <- CodenamesWeb.SlackClient.create_conversation("cdn-#{game.id}"),
+         {:ok, _} <-
+           Repo.update(
+             Ecto.Changeset.change(game, channel_id: Jason.decode!(res.body)["channel"]["id"])
+           ),
+         {:ok, _} <-
+           CodenamesWeb.SlackClient.join_conversation(channel_id),
+         {:ok, _} <-
+           CodenamesWeb.SlackClient.post_message(
+             channel_id,
+             "A new game is starting in <##{Jason.decode!(res.body)["channel"]["id"]}>"
+           ) do
+      gen_and_send_status(Repo.get!(Game, game.id))
+    else
       {:error, err} ->
         IO.inspect(err)
     end
@@ -125,7 +134,7 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"guess", args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
     [guess] = args
     game = get_game(channel_id)
-    player = Repo.one(from(Player, where: [channel_id: ^"@#{user_id}"]))
+    player = Repo.one(from(Player, where: [channel_id: ^"#{user_id}"]))
 
     player_is_up = is_player_up(game, player)
 
@@ -192,10 +201,13 @@ defmodule CodenamesWeb.SlackController do
 
     case Repo.delete(game) do
       {:ok, _struct} ->
-        IO.puts("DELETE")
+        CodenamesWeb.SlackClient.post_message(
+          game.channel_id,
+          "This game has been deleted. Archive this channel by typing `/archive`."
+        )
 
       {:error, _changeset} ->
-        IO.puts("DELETE ERR")
+        send_help("DELETE ERR")
     end
   end
 
@@ -272,11 +284,17 @@ defmodule CodenamesWeb.SlackController do
         "#{game.next} is up!"
       end
 
-    IO.puts(message)
+    channel = game.channel_id
+    file = gen_board_image(board_content, game.id)
+    CodenamesWeb.SlackClient.upload_file(file.path, message, channel)
+  end
+
+  def gen_board_image(content, id) do
     dir = System.tmp_dir!()
-    tmp_file = Path.join(dir, "#{game.id}.svg")
-    File.write!(tmp_file, board_content)
-    Mogrify.open(tmp_file) |> Mogrify.format("jpg") |> Mogrify.save(path: "temp.jpg")
+    tmp_file = Path.join(dir, "#{id}.svg")
+    File.write!(tmp_file, content)
+    file = Mogrify.open(tmp_file) |> Mogrify.format("jpg") |> Mogrify.save()
+    file
   end
 
   def send_help(channel_id) do
@@ -288,7 +306,7 @@ defmodule CodenamesWeb.SlackController do
   end
 
   defp get_player(channel_id) do
-    Repo.one(from(Player, where: [channel_id: ^"@#{channel_id}"]))
+    Repo.one(from(Player, where: [channel_id: ^"#{channel_id}"]))
   end
 
   defp is_player_up(game, player) do
@@ -299,10 +317,10 @@ defmodule CodenamesWeb.SlackController do
 
       not is_nil(player) and not is_nil(game) and game.red_player_id == player.id and
           game.next == "RED" ->
-        "RED"
+        true
 
       true ->
-        nil
+        false
     end
   end
 end

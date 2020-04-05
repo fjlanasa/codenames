@@ -22,7 +22,7 @@ defmodule Codenames.Game do
     game
     |> cast(attrs, [:blue_player_id, :red_player_id, :channel, :channel_id, :first, :next])
     |> unique_constraint(:channel, name: :games_channel_channel_id_index)
-    |> validate_required([:channel, :channel_id, :first, :next])
+    |> validate_required([:channel, :first, :next])
     |> validate_inclusion(:first, ["BLUE", "RED"])
     |> validate_inclusion(:next, ["BLUE", "RED"])
   end

@@ -79,20 +79,16 @@ defmodule Codenames.Board do
 
   @spec wrap_board_content(String.t()) :: String.t()
   def wrap_board_content(content) do
-    ret =
-      "<svg viewBox=\"0 0 #{@view_width} #{@view_height}\" xmlns=\"http://www.w3.org/2000/svg\" xml:space=\"preserve\">" <>
-        Enum.reduce(["A", "B", "C", "D", "E"], "", fn x, acc ->
-          acc <>
-            "<text style=\"font-size:16px;\" x=\"#{get_x_axis_label_coordinate(x)}\" y=\"16\">#{x}</text>"
-        end) <>
-        Enum.reduce(["1", "2", "3", "4", "5"], "", fn x, acc ->
-          acc <>
-            "<text style=\"font-size:16px;\" y=\"#{get_y_axis_label_coordinate(x)}\" x=\"6\">#{x}</text>"
-        end) <>
-        content <> "</svg>"
-
-    IO.inspect(ret)
-    ret
+    "<svg viewBox=\"0 0 #{@view_width} #{@view_height}\" xmlns=\"http://www.w3.org/2000/svg\" xml:space=\"preserve\">" <>
+      Enum.reduce(["A", "B", "C", "D", "E"], "", fn x, acc ->
+        acc <>
+          "<text style=\"font-size:16px;\" x=\"#{get_x_axis_label_coordinate(x)}\" y=\"16\">#{x}</text>"
+      end) <>
+      Enum.reduce(["1", "2", "3", "4", "5"], "", fn x, acc ->
+        acc <>
+          "<text style=\"font-size:16px;\" y=\"#{get_y_axis_label_coordinate(x)}\" x=\"6\">#{x}</text>"
+      end) <>
+      content <> "</svg>"
   end
 
   @spec build_public_board([Codenames.Square.t()]) :: String.t()
