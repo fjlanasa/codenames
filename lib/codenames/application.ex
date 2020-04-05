@@ -14,7 +14,7 @@ defmodule Codenames.Application do
       CodenamesWeb.Endpoint,
       # Starts a worker by calling: Codenames.Worker.start_link(arg)
       # {Codenames.Worker, arg},
-      Codenames.Words
+      {Codenames.Words, []}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
