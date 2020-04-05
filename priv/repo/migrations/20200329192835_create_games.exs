@@ -18,7 +18,6 @@ defmodule Codenames.Repo.Migrations.CreateGames do
     create index(:games, [:red_player_id])
     create index(:games, [:channel, :channel_id], unique: true)
     create constraint(:games, :channel_not_null, check: "channel IS NOT NULL")
-    create constraint(:games, :channel_id_not_null, check: "channel_id IS NOT NULL")
     create constraint(:games, :blue_not_null, check: "blue_player_id IS NOT NULL")
     create constraint(:games, :red_not_null, check: "red_player_id IS NOT NULL")
     create constraint(:games, :must_be_red_or_blue, check: "winner IN ('RED', 'BLUE')")
