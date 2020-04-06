@@ -7,7 +7,7 @@ defmodule CodenamesWeb.SlackClient do
   @open_conversations_path "/conversations.open"
   @join_conversation_path "/conversations.join"
   @file_upload_path "/files.upload"
-  @token Application.get_env(:codenames, :slack_key)
+  @token System.get_env("SLACK_KEY")
 
   defp build_header(content_type \\ "application/json") do
     [Authorization: "Bearer #{@token}", "Content-Type": content_type]
