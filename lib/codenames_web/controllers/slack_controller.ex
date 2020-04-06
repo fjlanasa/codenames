@@ -14,7 +14,7 @@ defmodule CodenamesWeb.SlackController do
       do_handle_message(params)
     end)
 
-    send_resp(conn, 200, "")
+    json(conn, %{text: "", response_type: "in_channel"})
   end
 
   defp do_handle_message(
