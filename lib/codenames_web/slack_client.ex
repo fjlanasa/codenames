@@ -3,6 +3,7 @@ defmodule CodenamesWeb.SlackClient do
 
   @base_url "https://slack.com/api"
   @post_message_path "/chat.postMessage"
+  @post_ephemeral_message_path "/chat.postEphemeral"
   @create_conversations_path "/conversations.create"
   @open_conversations_path "/conversations.open"
   @join_conversation_path "/conversations.join"
@@ -29,6 +30,14 @@ defmodule CodenamesWeb.SlackClient do
     post(
       build_url(@post_message_path),
       Jason.encode!(%{channel: channel, text: text, reply_broadcast: true}),
+      build_header()
+    )
+  end
+
+  def post_ephemeral_message(channel, text, user_id) do
+    post(
+      build_url(@post_ephemeral_message_path),
+      Jason.encode!(%{channel: channel, text: text, user: user_id}),
       build_header()
     )
   end
