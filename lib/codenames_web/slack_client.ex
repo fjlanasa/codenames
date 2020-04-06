@@ -18,7 +18,7 @@ defmodule CodenamesWeb.SlackClient do
   end
 
   def join_conversation(channel) do
-    HTTPoison.post(
+    post(
       build_url(@join_conversation_path),
       Jason.encode!(%{channel: channel}),
       build_header()
@@ -26,7 +26,7 @@ defmodule CodenamesWeb.SlackClient do
   end
 
   def post_message(channel, text) do
-    HTTPoison.post(
+    post(
       build_url(@post_message_path),
       Jason.encode!(%{channel: channel, text: text, reply_broadcast: true}),
       build_header()
@@ -34,7 +34,7 @@ defmodule CodenamesWeb.SlackClient do
   end
 
   def create_conversation(name) do
-    HTTPoison.post(
+    post(
       build_url(@create_conversations_path),
       Jason.encode!(%{name: name}),
       build_header()
@@ -42,7 +42,7 @@ defmodule CodenamesWeb.SlackClient do
   end
 
   def open_conversation(user_ids) do
-    HTTPoison.post(
+    post(
       build_url(@open_conversations_path),
       Jason.encode!(%{users: Enum.join(user_ids, ",")}),
       build_header()
@@ -50,7 +50,7 @@ defmodule CodenamesWeb.SlackClient do
   end
 
   def upload_file(file_path, message, channel) do
-    HTTPoison.post(
+    post(
       build_url(@file_upload_path),
       {:multipart,
        [
@@ -62,5 +62,9 @@ defmodule CodenamesWeb.SlackClient do
        ]},
       build_header("multipart/form-data")
     )
+  end
+
+  def process_response_body(body) do
+    Jason.decode!(body)
   end
 end

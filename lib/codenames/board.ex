@@ -100,4 +100,12 @@ defmodule Codenames.Board do
   def build_key(squares) do
     wrap_board_content(Enum.join(Enum.map(squares, fn x -> build_square(x, false) end)))
   end
+
+  def gen_board_image(content, id) do
+    dir = System.tmp_dir!()
+    tmp_file = Path.join(dir, "#{id}.svg")
+    File.write!(tmp_file, content)
+    file = Mogrify.open(tmp_file) |> Mogrify.format("jpg") |> Mogrify.save()
+    file
+  end
 end

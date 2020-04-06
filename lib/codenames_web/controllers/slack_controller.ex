@@ -1,6 +1,7 @@
 defmodule CodenamesWeb.SlackController do
   use CodenamesWeb, :controller
   alias Codenames.{Game, Player, Square, Repo, Board}
+  alias CodenamesWeb.SlackClient
   import Ecto.Query
   @subcommands ~w(new guess status pass quit add_player help)
   @teams ~w(BLUE RED)
@@ -104,25 +105,28 @@ defmodule CodenamesWeb.SlackController do
     {:ok, red_player} = Player.find_or_create("slack", red_player_id)
 
     with {:ok, game} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
-         {:ok, res} <-
-           CodenamesWeb.SlackClient.open_conversation([blue_player_id, red_player_id]),
-         {:ok, _} <-
-           CodenamesWeb.SlackClient.upload_file(
-             gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+         {:ok,
+          %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
+           SlackClient.open_conversation([blue_player_id, red_player_id]),
+         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
+           SlackClient.upload_file(
+             Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
              "Here is the key for game #{game.id}",
-             Jason.decode!(res.body)["channel"]["id"]
+             private_channel_id
            ),
-         {:ok, res} <- CodenamesWeb.SlackClient.create_conversation("cdn-#{game.id}"),
+         {:ok,
+          %HTTPoison.Response{
+            body: %{"ok" => true, "channel" => %{"id" => public_channel_id}}
+          }} <-
+           SlackClient.create_conversation("cdn-#{game.id}"),
          {:ok, _} <-
-           Repo.update(
-             Ecto.Changeset.change(game, channel_id: Jason.decode!(res.body)["channel"]["id"])
-           ),
-         {:ok, _} <-
-           CodenamesWeb.SlackClient.join_conversation(channel_id),
-         {:ok, _} <-
-           CodenamesWeb.SlackClient.post_message(
+           Repo.update(Ecto.Changeset.change(game, channel_id: public_channel_id)),
+         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
+           SlackClient.join_conversation(channel_id),
+         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
+           SlackClient.post_message(
              channel_id,
-             "A new game is starting in <##{Jason.decode!(res.body)["channel"]["id"]}>"
+             "A new game is starting in <##{public_channel_id}>"
            ) do
       gen_and_send_status(Repo.get!(Game, game.id))
     else
@@ -164,8 +168,7 @@ defmodule CodenamesWeb.SlackController do
         end
 
         if square.type != game.next do
-          game_update =
-            Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+          game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
 
           Repo.update!(game_update)
         end
@@ -201,7 +204,7 @@ defmodule CodenamesWeb.SlackController do
 
     case Repo.delete(game) do
       {:ok, _struct} ->
-        CodenamesWeb.SlackClient.post_message(
+        SlackClient.post_message(
           game.channel_id,
           "This game has been deleted. Archive this channel by typing `/archive`."
         )
@@ -242,16 +245,8 @@ defmodule CodenamesWeb.SlackController do
       end
 
     channel = game.channel_id
-    file = gen_board_image(board_content, game.id)
-    CodenamesWeb.SlackClient.upload_file(file.path, message, channel)
-  end
-
-  def gen_board_image(content, id) do
-    dir = System.tmp_dir!()
-    tmp_file = Path.join(dir, "#{id}.svg")
-    File.write!(tmp_file, content)
-    file = Mogrify.open(tmp_file) |> Mogrify.format("jpg") |> Mogrify.save()
-    file
+    file = Board.gen_board_image(board_content, game.id)
+    SlackClient.upload_file(file.path, message, channel)
   end
 
   def send_help(channel_id) do

@@ -107,6 +107,7 @@ defmodule Codenames.Game do
       cond do
         not is_nil(status.picked_assassin) ->
           get_opposite_team(status.picked_assassin)
+
         status.picked_assassin == "BLUE" ->
           "RED"
 
