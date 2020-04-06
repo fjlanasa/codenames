@@ -155,7 +155,7 @@ defmodule CodenamesWeb.SlackController do
         square = Ecto.Changeset.change(square, picked: true, picked_by: game.next)
         square = Repo.update!(square)
 
-        status = gen_status(game)
+        status = Game.get_status(game)
 
         if not is_nil(status.winner) do
           game_update = Ecto.Changeset.change(game, winner: status.winner)
@@ -165,7 +165,7 @@ defmodule CodenamesWeb.SlackController do
 
         if square.type != game.next do
           game_update =
-            Ecto.Changeset.change(game, next: if(game.next == "BLUE", do: "RED", else: "BLUE"))
+            Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
 
           Repo.update!(game_update)
         end
@@ -184,7 +184,7 @@ defmodule CodenamesWeb.SlackController do
     player = get_player(user_id)
 
     if is_player_up(game, player) do
-      game = Ecto.Changeset.change(game, next: if(game.next == "BLUE", do: "RED", else: "BLUE"))
+      game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
       game = Repo.update!(game)
       gen_and_send_status(game)
     else
@@ -224,50 +224,7 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"help", _}, %{"channel_id" => channel_id}), do: send_help(channel_id)
 
   defp gen_and_send_status(game) do
-    gen_status(game) |> send_status(game)
-  end
-
-  defp gen_status(game) do
-    first = game.first
-    second = if game.first == "BLUE", do: "RED", else: "BLUE"
-    squares = Game.get_squares(game)
-
-    status =
-      Enum.reduce(
-        squares,
-        %{first_count: 0, second_count: 0, picked_assassin: nil, board_content: ""},
-        fn x, acc ->
-          %{
-            first_count:
-              if(x.type == first and x.picked, do: acc.first_count + 1, else: acc.first_count),
-            second_count:
-              if(x.type == second and x.picked, do: acc.second_count + 1, else: acc.second_count),
-            picked_assassin: if(x.type == "ASSASSIN", do: x.picked_by, else: acc.picked_assassin),
-            board_content: acc.board_content <> Board.build_square(x)
-          }
-        end
-      )
-
-    winner =
-      cond do
-        status.picked_assassin == "BLUE" ->
-          "RED"
-
-        status.picked_assassin == "RED" ->
-          "BLUE"
-
-        status.first_count == 9 ->
-          first
-
-        status.second_count == 8 ->
-          second
-
-        true ->
-          nil
-      end
-
-    status = Map.put(status, :winner, winner)
-    %{status | board_content: Board.wrap_board_content(status.board_content)}
+    Game.get_status(game) |> send_status(game)
   end
 
   defp send_status(

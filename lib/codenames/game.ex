@@ -2,7 +2,7 @@ defmodule Codenames.Game do
   use Ecto.Schema
   import Ecto.Changeset
   import Ecto.Query
-  alias Codenames.{Square, Words, Repo}
+  alias Codenames.{Square, Words, Board, Repo}
 
   schema "games" do
     field :channel, :string
@@ -29,7 +29,7 @@ defmodule Codenames.Game do
 
   def gen_squares(game_id, first) do
     now = NaiveDateTime.truncate(NaiveDateTime.utc_now(), :second)
-    second = if first == "BLUE", do: "RED", else: "BLUE"
+    second = get_opposite_team(first)
     words = Words.get_words_for_game()
 
     types =
@@ -60,7 +60,7 @@ defmodule Codenames.Game do
   def new(blue_player_id, red_player_id, channel, channel_id, first \\ "BLUE") do
     with {:ok, game} <-
            Codenames.Repo.insert(
-             Codenames.Game.changeset(%Codenames.Game{}, %{
+             changeset(%Codenames.Game{}, %{
                blue_player_id: blue_player_id,
                red_player_id: red_player_id,
                channel: channel,
@@ -81,4 +81,52 @@ defmodule Codenames.Game do
   def get_squares(game) do
     Repo.all(from(s in Square, where: s.game == ^game.id))
   end
+
+  def get_status(game) do
+    first = game.first
+    second = get_opposite_team(first)
+    squares = get_squares(game)
+
+    status =
+      Enum.reduce(
+        squares,
+        %{first_count: 0, second_count: 0, picked_assassin: nil, board_content: ""},
+        fn x, acc ->
+          %{
+            first_count:
+              if(x.type == first and x.picked, do: acc.first_count + 1, else: acc.first_count),
+            second_count:
+              if(x.type == second and x.picked, do: acc.second_count + 1, else: acc.second_count),
+            picked_assassin: if(x.type == "ASSASSIN", do: x.picked_by, else: acc.picked_assassin),
+            board_content: acc.board_content <> Board.build_square(x)
+          }
+        end
+      )
+
+    winner =
+      cond do
+        not is_nil(status.picked_assassin) ->
+          get_opposite_team(status.picked_assassin)
+        status.picked_assassin == "BLUE" ->
+          "RED"
+
+        status.picked_assassin == "RED" ->
+          "BLUE"
+
+        status.first_count == 9 ->
+          first
+
+        status.second_count == 8 ->
+          second
+
+        true ->
+          nil
+      end
+
+    status = Map.put(status, :winner, winner)
+    %{status | board_content: Board.wrap_board_content(status.board_content)}
+  end
+
+  def get_opposite_team("BLUE"), do: "RED"
+  def get_opposite_team("RED"), do: "BLUE"
 end
