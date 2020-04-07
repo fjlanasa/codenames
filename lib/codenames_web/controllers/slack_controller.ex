@@ -115,7 +115,11 @@ defmodule CodenamesWeb.SlackController do
                optional(:request_url) => any,
                optional(:status_code) => integer
              }}
-  defp execute({"new", args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
+  defp execute({"new", args}, %{
+         "channel_id" => channel_id,
+         "user_id" => user_id,
+         "response_url" => response_url
+       }) do
     [blue_player_id, red_player_id, first] = args
     {:ok, blue_player} = Player.find_or_create("slack", blue_player_id)
     {:ok, red_player} = Player.find_or_create("slack", red_player_id)
@@ -138,12 +142,9 @@ defmodule CodenamesWeb.SlackController do
          {:ok, _} <-
            Repo.update(Ecto.Changeset.change(game, channel_id: public_channel_id)),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
-           SlackClient.join_conversation(channel_id),
-         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
-           SlackClient.post_message(
-             channel_id,
-             "A new game is starting in <##{public_channel_id}>"
-           ),
+           SlackClient.post(response_url, Jason.encode!(%{
+             "text" => "A new game is starting in <##{public_channel_id}>"
+           })),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
       gen_and_send_status(Repo.get!(Game, game.id))
     else
@@ -273,7 +274,8 @@ defmodule CodenamesWeb.SlackController do
   def send_help(channel_id, user_id, nil),
     do: do_send_help(channel_id, "Something went wrong. Try again", user_id)
 
-  def send_help(channel_id, user_id, err) when is_binary(err), do: do_send_help(channel_id, err, user_id)
+  def send_help(channel_id, user_id, err) when is_binary(err),
+    do: do_send_help(channel_id, err, user_id)
 
   def send_help(
         channel_id,

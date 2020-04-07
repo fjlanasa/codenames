@@ -73,6 +73,8 @@ defmodule CodenamesWeb.SlackClient do
     )
   end
 
+  def process_response_body("ok"), do: %{"ok" => true}
+
   def process_response_body(body) do
     Jason.decode!(body)
   end
