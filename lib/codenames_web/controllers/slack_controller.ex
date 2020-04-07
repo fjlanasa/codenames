@@ -128,23 +128,27 @@ defmodule CodenamesWeb.SlackController do
          {:ok,
           %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
            SlackClient.open_conversation([blue_player_id, red_player_id]),
-         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
-           SlackClient.upload_file(
-             Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
-             "Here is the key for game #{game.id}",
-             private_channel_id
-           ),
          {:ok,
           %HTTPoison.Response{
             body: %{"ok" => true, "channel" => %{"id" => public_channel_id}}
           }} <-
-           SlackClient.create_conversation("cdn-#{game.id}"),
+           SlackClient.create_conversation(get_game_channel_name(game)),
+         {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
+           SlackClient.upload_file(
+             Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+             "Here is the key for the game in <##{public_channel_id}>",
+             private_channel_id
+           ),
          {:ok, _} <-
            Repo.update(Ecto.Changeset.change(game, channel_id: public_channel_id)),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
-           SlackClient.post(response_url, Jason.encode!(%{
-             "text" => "A new game is starting in <##{public_channel_id}>"
-           })),
+           SlackClient.post(
+             response_url,
+             Jason.encode!(%{
+               "text" => "A new game is starting in <##{public_channel_id}>",
+               "response_type" => "in_channel"
+             })
+           ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
       gen_and_send_status(Repo.get!(Game, game.id))
     else
@@ -312,4 +316,7 @@ defmodule CodenamesWeb.SlackController do
         false
     end
   end
+
+  defp get_game_channel_name(game),
+    do: "cdnm-#{Timex.format!(game.inserted_at, "%d%m%y%H%M%S", :strftime)}"
 end
