@@ -150,7 +150,7 @@ defmodule CodenamesWeb.SlackController do
              })
            ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
-      gen_and_send_status(Repo.get!(Game, game.id))
+      get_and_send_status(Repo.get!(Game, game.id))
     else
       err ->
         IO.inspect(err)
@@ -212,7 +212,7 @@ defmodule CodenamesWeb.SlackController do
     if is_player_up(game, player) do
       game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
       game = Repo.update!(game)
-      gen_and_send_status(game)
+      get_and_send_status(game)
     else
       send_help(channel_id, user_id)
     end
@@ -241,7 +241,7 @@ defmodule CodenamesWeb.SlackController do
     game = get_game(channel_id)
 
     if game do
-      gen_and_send_status(game)
+      get_and_send_status(game)
     else
       send_help(channel_id, user_id)
     end
@@ -250,7 +250,7 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"help", _}, %{"channel_id" => channel_id, "user_id" => user_id}),
     do: send_help(channel_id, user_id)
 
-  defp gen_and_send_status(game) do
+  defp get_and_send_status(game) do
     Game.get_status(game) |> send_status(game)
   end
 
@@ -275,8 +275,8 @@ defmodule CodenamesWeb.SlackController do
 
   def send_help(channel_id, user_id, err \\ nil)
 
-  def send_help(channel_id, user_id, nil),
-    do: do_send_help(channel_id, "Something went wrong. Try again", user_id)
+  def send_help(channel_id, _, nil),
+    do: SlackClient.send_help(channel_id)
 
   def send_help(channel_id, user_id, err) when is_binary(err),
     do: do_send_help(channel_id, err, user_id)
