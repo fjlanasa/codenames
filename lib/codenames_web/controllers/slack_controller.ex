@@ -45,7 +45,7 @@ defmodule CodenamesWeb.SlackController do
         {:ok, {subcommand, arguments}}
 
       false ->
-        {:error, "invalid subcommand"}
+        {:error, "Invalid command. Type `/cdnm help` for help."}
     end
   end
 
@@ -63,7 +63,7 @@ defmodule CodenamesWeb.SlackController do
        end) ++ if(Enum.empty?(tail), do: ["BLUE"], else: [String.upcase(List.first(tail))])}
     else
       _ ->
-        {:error, "invalid arguments"}
+        {:error, "Invalid command. Type `/cdnm help` for help."}
     end
   end
 
@@ -77,7 +77,7 @@ defmodule CodenamesWeb.SlackController do
       {:ok, [String.upcase(guess)]}
     else
       _ ->
-        {:error, "invalid arguments"}
+        {:error, "Invalid command. Type `/cdnm help` for help."}
     end
   end
 
@@ -87,7 +87,7 @@ defmodule CodenamesWeb.SlackController do
     if String.match?(player_id, @player_id_regex) do
       {:ok, [String.split(player_id, "|") |> List.first() |> String.slice(1..-1)]}
     else
-      {:error, "invalid arguments"}
+      {:error, "Invalid command. Type `/cdnm help` for help."}
     end
   end
 
@@ -100,7 +100,7 @@ defmodule CodenamesWeb.SlackController do
   defp validate_message({"help", _}), do: {:ok, []}
 
   defp validate_message(_) do
-    {:error, "invalid subcommandd"}
+    {:error, "Invalid command. Type `/cdnm help` for help."}
   end
 
   @spec execute({String.t(), [String.t()]}, any()) ::
@@ -150,7 +150,14 @@ defmodule CodenamesWeb.SlackController do
              })
            ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
-      get_and_send_status(Repo.get!(Game, game.id))
+      current_guesser =
+        if game.next == "BLUE", do: blue_player.channel_id, else: red_player.channel_id
+
+      get_and_send_status(
+        Repo.get!(Game, game.id),
+        " <@#{current_guesser}> enter your team's guess.",
+        "AFTER"
+      )
     else
       err ->
         IO.inspect(err)
@@ -190,13 +197,16 @@ defmodule CodenamesWeb.SlackController do
           Repo.update!(game_update)
         end
 
-        if square.type != game.next do
-          game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+        message =
+          if square.type != game.next do
+            game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+            Repo.update!(game_update)
+            "Incorrect! "
+          else
+            "Correct! "
+          end
 
-          Repo.update!(game_update)
-        end
-
-        send_status(status, Repo.get(Game, game.id))
+        send_status(status, Repo.get(Game, game.id), message)
       else
         send_help(channel_id, user_id, "Not a valid guess.")
       end
@@ -208,11 +218,12 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"pass", _args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
     game = get_game(channel_id)
     player = get_player(user_id)
+    current_team = game.next
 
     if is_player_up(game, player) do
       game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
       game = Repo.update!(game)
-      get_and_send_status(game)
+      get_and_send_status(game, "#{current_team} passes.")
     else
       send_help(channel_id, user_id)
     end
@@ -250,8 +261,8 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"help", _}, %{"channel_id" => channel_id, "user_id" => user_id}),
     do: send_help(channel_id, user_id)
 
-  defp get_and_send_status(game) do
-    Game.get_status(game) |> send_status(game)
+  defp get_and_send_status(game, message \\ "", message_placement \\ "BEFORE") do
+    Game.get_status(game) |> send_status(game, message, message_placement)
   end
 
   defp send_status(
@@ -259,18 +270,30 @@ defmodule CodenamesWeb.SlackController do
            board_content: board_content,
            winner: winner
          },
-         game
+         game,
+         message,
+         message_placement \\ "BEFORE"
        ) do
     message =
-      if not is_nil(winner) do
-        "#{winner} wins!"
+      if message_placement == "BEFORE" do
+        message <> " " <> status_content(game, winner)
       else
-        "#{game.next} is up!"
+        status_content(game, winner) <> " " <> message
       end
+
+    message = message <> "\n\nType `/cdnm help` for help."
 
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
     SlackClient.upload_file(file.path, message, channel)
+  end
+
+  defp status_content(game, winner) do
+    if not is_nil(winner) do
+      "*#{winner} wins!*"
+    else
+      "#{game.next} is up!"
+    end
   end
 
   def send_help(channel_id, user_id, err \\ nil)
@@ -318,5 +341,5 @@ defmodule CodenamesWeb.SlackController do
   end
 
   defp get_game_channel_name(game),
-    do: "cdnm-#{Timex.format!(game.inserted_at, "%d%m%y%H%M%S", :strftime)}"
+    do: "cdnm-#{Timex.format!(game.inserted_at, "%y%m%d%H%M%S", :strftime)}"
 end
