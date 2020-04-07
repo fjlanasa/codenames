@@ -44,7 +44,8 @@ defmodule Codenames.MixProject do
       {:jason, "~> 1.0"},
       {:plug_cowboy, "~> 2.0"},
       {:mogrify, "~> 0.7.3"},
-      {:httpoison, "~> 1.6"}
+      {:httpoison, "~> 1.6"},
+      {:timex, "~> 3.0"}
     ]
   end
 
