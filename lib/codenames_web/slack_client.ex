@@ -75,11 +75,15 @@ defmodule CodenamesWeb.SlackClient do
     )
   end
 
-  def send_help(channel_id, token) do
-    post_message(
-      channel_id,
-      "*Commands*\n\n>*cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\ncdnm new @Joe @Jane RED```\n*cdnm guess* _space_\n```Makes a guess. Must be entered by the guessing team's clue giver.\n\nOptions:\n* space: column and row of space\n\nExample:\ncdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*cdnm status*```Returns the game's current status```\n*cdnm quit* ```Ends the current game```\n>",
-      token
+  def send_help(response_url, token) do
+    post(
+      response_url,
+      Jason.encode!(%{
+        "response_type" => "in_channel",
+        "text" =>
+          "*Commands*\n\n>*cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\ncdnm new @Joe @Jane RED```\n*cdnm guess* _space_\n```Makes a guess. Must be entered by the guessing team's clue giver.\n\nOptions:\n* space: column and row of space\n\nExample:\ncdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*cdnm status*```Returns the game's current status```\n*cdnm quit* ```Ends the current game```\n>"
+      }),
+      build_header(token)
     )
   end
 

@@ -309,8 +309,12 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
-  defp execute({"help", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token),
-    do: send_help(token, channel_id, user_id)
+  defp execute(
+         {"help", _},
+         %{"channel_id" => channel_id, "user_id" => user_id, "reponse_url" => response_url},
+         token
+       ),
+       do: SlackClient.send_help(channel_id, token)
 
   defp get_and_send_status(token, game, message \\ "", message_placement \\ "BEFORE") do
     status = Game.get_status(game)
@@ -351,8 +355,8 @@ defmodule CodenamesWeb.SlackController do
 
   def send_help(token, channel_id, user_id, err \\ nil)
 
-  def send_help(token, channel_id, _, nil),
-    do: SlackClient.send_help(channel_id, token)
+  def send_help(token, channel_id, user_id, nil),
+    do: do_send_help(token, channel_id, "Something went wrong.", user_id)
 
   def send_help(token, channel_id, user_id, err) when is_binary(err),
     do: do_send_help(token, channel_id, err, user_id)
