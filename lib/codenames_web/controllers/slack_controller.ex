@@ -311,7 +311,7 @@ defmodule CodenamesWeb.SlackController do
 
   defp execute(
          {"help", _},
-         %{"reponse_url" => response_url},
+         %{"response_url" => response_url},
          token
        ),
        do: SlackClient.send_help(response_url, token)
