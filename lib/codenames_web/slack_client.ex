@@ -7,58 +7,61 @@ defmodule CodenamesWeb.SlackClient do
   @create_conversations_path "/conversations.create"
   @open_conversations_path "/conversations.open"
   @join_conversation_path "/conversations.join"
+  @oauth_path "/oauth.v2.access"
   @file_upload_path "/files.upload"
   @token System.get_env("SLACK_KEY")
+  @client_id System.get_env("SLACK_CLIENT_ID")
+  @client_secret System.get_env("SLACK_CLIENT_SECRET")
 
-  defp build_header(content_type \\ "application/json") do
-    [Authorization: "Bearer #{@token}", "Content-Type": content_type]
+  def build_header(token, content_type \\ "application/json") do
+    [Authorization: "Bearer #{token || @token}", "Content-Type": content_type]
   end
 
   def build_url(path) do
     @base_url <> path
   end
 
-  def join_conversation(channel) do
+  def join_conversation(channel, token) do
     post(
       build_url(@join_conversation_path),
       Jason.encode!(%{channel: channel}),
-      build_header()
+      build_header(token)
     )
   end
 
-  def post_message(channel, text) do
+  def post_message(channel, text, token) do
     post(
       build_url(@post_message_path),
       Jason.encode!(%{channel: channel, text: text, reply_broadcast: true}),
-      build_header()
+      build_header(token)
     )
   end
 
-  def post_ephemeral_message(channel, text, user_id) do
+  def post_ephemeral_message(channel, text, user_id, token) do
     post(
       build_url(@post_ephemeral_message_path),
       Jason.encode!(%{channel: channel, text: text, user: user_id}),
-      build_header()
+      build_header(token)
     )
   end
 
-  def create_conversation(name) do
+  def create_conversation(name, token) do
     post(
       build_url(@create_conversations_path),
       Jason.encode!(%{name: name}),
-      build_header()
+      build_header(token)
     )
   end
 
-  def open_conversation(user_ids) do
+  def open_conversation(user_ids, token) do
     post(
       build_url(@open_conversations_path),
       Jason.encode!(%{users: Enum.join(user_ids, ",")}),
-      build_header()
+      build_header(token)
     )
   end
 
-  def upload_file(file_path, message, channel) do
+  def upload_file(file_path, message, channel, token) do
     post(
       build_url(@file_upload_path),
       {:multipart,
@@ -68,14 +71,23 @@ defmodule CodenamesWeb.SlackClient do
          {"", file_path, {"form-data", [{"name", :file}]}, []},
          {:file, file_path, []}
        ]},
-      build_header("multipart/form-data")
+      build_header(token, "multipart/form-data")
     )
   end
 
-  def send_help(channel_id) do
+  def send_help(channel_id, token) do
     post_message(
       channel_id,
-      "*Commands*\n\n>*cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\ncdnm new @Joe @Jane RED```\n*cdnm guess* _space_\n```Makes a guess. Must be entered by the guessing team's clue giver.\n\nOptions:\n* space: column and row of space\n\nExample:\ncdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*cdnm status*```Returns the game's current status```\n*cdnm quit* ```Ends the current game```\n>"
+      "*Commands*\n\n>*cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\ncdnm new @Joe @Jane RED```\n*cdnm guess* _space_\n```Makes a guess. Must be entered by the guessing team's clue giver.\n\nOptions:\n* space: column and row of space\n\nExample:\ncdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*cdnm status*```Returns the game's current status```\n*cdnm quit* ```Ends the current game```\n>",
+      token
+    )
+  end
+
+  def get_oauth_access(code) do
+    post(
+      build_url(@oauth_path),
+      {:form, [{:code, code}, {:client_id, @client_id}, {:client_secret, @client_secret}]},
+      build_header(@token, "application/x-www-form-urlencoded")
     )
   end
 

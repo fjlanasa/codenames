@@ -1,6 +1,6 @@
 defmodule CodenamesWeb.SlackController do
   use CodenamesWeb, :controller
-  alias Codenames.{Game, Player, Square, Repo, Board}
+  alias Codenames.{Game, Player, Square, Repo, Board, Slack}
   alias CodenamesWeb.SlackClient
   import Ecto.Query
   @subcommands ~w(new guess status pass quit add_player help)
@@ -8,10 +8,52 @@ defmodule CodenamesWeb.SlackController do
   @columns ~w(A B C D E)
   @rows ~w(1 2 3 4 5)
   @player_id_regex ~r/^<@[\w]+|[\w]+>&/
+  @salt System.get_env("SALT", "salt")
 
-  def handle_message(conn, params) do
+  def auth(conn, %{"code" => code}) do
+    with {:ok,
+          %{
+            body: %{
+              "access_token" => token,
+              "team" => %{
+                "id" => team_id
+              }
+            }
+          }} <- SlackClient.get_oauth_access(code),
+         {:ok, _} <-
+           Repo.insert(
+             Slack.Team.changeset(%Slack.Team{}, %{
+               team_id: team_id,
+               token: Phoenix.Token.encrypt(CodenamesWeb.Endpoint, @salt, token)
+             })
+           ) do
+      send_resp(conn, 200, "All set!")
+    else
+      {:error,
+       %{
+         errors: [
+           team_id:
+             {"has already been taken",
+              [constraint: :unique, constraint_name: "slack_teams_team_id_index"]}
+         ]
+       }} ->
+        send_resp(conn, 400, "Your team has already installed this app.")
+
+      err ->
+        IO.inspect(err)
+        send_resp(conn, 400, "Something went wrong.")
+    end
+  end
+
+  def handle_message(conn, %{"team_id" => team_id} = params) do
     Task.start(fn ->
-      do_handle_message(params)
+      case get_team_token(team_id) do
+        {:ok, token} ->
+          do_handle_message(params, token)
+
+        _ ->
+          IO.puts("No auth token")
+      end
     end)
 
     json(conn, %{text: "", response_type: "in_channel"})
@@ -22,16 +64,17 @@ defmodule CodenamesWeb.SlackController do
            "text" => text,
            "channel_id" => channel_id,
            "user_id" => user_id
-         } = params
+         } = params,
+         token
        ) do
     with {:ok, {subcommand, args}} <- parse_message(text),
          {:ok, clean_args} <- validate_message({subcommand, args}),
-         {:ok, execute({subcommand, clean_args}, params)} do
+         {:ok, execute({subcommand, clean_args}, params, token)} do
       :ok
     else
       err ->
         IO.inspect(err)
-        send_help(channel_id, user_id, err)
+        send_help(token, channel_id, user_id, err)
     end
   end
 
@@ -103,7 +146,7 @@ defmodule CodenamesWeb.SlackController do
     {:error, "Invalid command. Type `/cdnm help` for help."}
   end
 
-  @spec execute({String.t(), [String.t()]}, any()) ::
+  @spec execute({String.t(), [String.t()]}, any(), String.t()) ::
           {:error, HTTPoison.Error.t()}
           | {:ok,
              %{
@@ -115,11 +158,15 @@ defmodule CodenamesWeb.SlackController do
                optional(:request_url) => any,
                optional(:status_code) => integer
              }}
-  defp execute({"new", args}, %{
-         "channel_id" => channel_id,
-         "user_id" => user_id,
-         "response_url" => response_url
-       }) do
+  defp execute(
+         {"new", args},
+         %{
+           "channel_id" => channel_id,
+           "user_id" => user_id,
+           "response_url" => response_url
+         },
+         token
+       ) do
     [blue_player_id, red_player_id, first] = args
     {:ok, blue_player} = Player.find_or_create("slack", blue_player_id)
     {:ok, red_player} = Player.find_or_create("slack", red_player_id)
@@ -127,17 +174,18 @@ defmodule CodenamesWeb.SlackController do
     with {:ok, game} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
          {:ok,
           %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
-           SlackClient.open_conversation([blue_player_id, red_player_id]),
+           SlackClient.open_conversation([blue_player_id, red_player_id], token),
          {:ok,
           %HTTPoison.Response{
             body: %{"ok" => true, "channel" => %{"id" => public_channel_id}}
           }} <-
-           SlackClient.create_conversation(get_game_channel_name(game)),
+           SlackClient.create_conversation(get_game_channel_name(game), token),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
            SlackClient.upload_file(
              Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
              "Here is the key for the game in <##{public_channel_id}>",
-             private_channel_id
+             private_channel_id,
+             token
            ),
          {:ok, _} <-
            Repo.update(Ecto.Changeset.change(game, channel_id: public_channel_id)),
@@ -147,13 +195,15 @@ defmodule CodenamesWeb.SlackController do
              Jason.encode!(%{
                "text" => "A new game is starting in <##{public_channel_id}>",
                "response_type" => "in_channel"
-             })
+             }),
+             SlackClient.build_header(token)
            ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
       current_guesser =
         if game.next == "BLUE", do: blue_player.channel_id, else: red_player.channel_id
 
       get_and_send_status(
+        token,
         Repo.get!(Game, game.id),
         " <@#{current_guesser}> enter your team's guess.",
         "AFTER"
@@ -165,7 +215,7 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
-  defp execute({"guess", args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
+  defp execute({"guess", args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     [guess] = args
     game = get_game(channel_id)
     player = Repo.one(from(Player, where: [channel_id: ^"#{user_id}"]))
@@ -206,7 +256,7 @@ defmodule CodenamesWeb.SlackController do
             "Correct! "
           end
 
-        send_status(status, Repo.get(Game, game.id), message)
+        send_status(token, status, Repo.get(Game, game.id), message)
       else
         send_help(channel_id, user_id, "Not a valid guess.")
       end
@@ -215,7 +265,7 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
-  defp execute({"pass", _args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
+  defp execute({"pass", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     game = get_game(channel_id)
     player = get_player(user_id)
     current_team = game.next
@@ -223,49 +273,52 @@ defmodule CodenamesWeb.SlackController do
     if is_player_up(game, player) do
       game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
       game = Repo.update!(game)
-      get_and_send_status(game, "#{current_team} passes.")
+      get_and_send_status(token, game, "#{current_team} passes.")
     else
-      send_help(channel_id, user_id)
+      send_help(token, channel_id, user_id)
     end
   end
 
-  defp execute({"add_player", _args}, %{"channel_id" => channel_id, "user_id" => user_id}) do
-    send_help(channel_id, user_id)
+  defp execute({"add_player", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
+    send_help(token, channel_id, user_id)
   end
 
-  defp execute({"quit", _}, %{"channel_id" => channel_id, "user_id" => user_id}) do
+  defp execute({"quit", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     game = get_game(channel_id)
 
     case Repo.delete(game) do
       {:ok, _struct} ->
         SlackClient.post_message(
           game.channel_id,
-          "This game has been deleted. Archive this channel by typing `/archive`."
+          "This game has been deleted. Archive this channel by typing `/archive`.",
+          token
         )
 
       {:error, _changeset} ->
-        send_help(channel_id, user_id)
+        send_help(token, channel_id, user_id)
     end
   end
 
-  defp execute({"status", _}, %{"channel_id" => channel_id, "user_id" => user_id}) do
+  defp execute({"status", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     game = get_game(channel_id)
 
     if game do
-      get_and_send_status(game)
+      get_and_send_status(token, game)
     else
-      send_help(channel_id, user_id)
+      send_help(token, channel_id, user_id)
     end
   end
 
-  defp execute({"help", _}, %{"channel_id" => channel_id, "user_id" => user_id}),
-    do: send_help(channel_id, user_id)
+  defp execute({"help", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token),
+    do: send_help(token, channel_id, user_id)
 
-  defp get_and_send_status(game, message \\ "", message_placement \\ "BEFORE") do
-    Game.get_status(game) |> send_status(game, message, message_placement)
+  defp get_and_send_status(token, game, message \\ "", message_placement \\ "BEFORE") do
+    status = Game.get_status(game)
+    send_status(token, status, game, message, message_placement)
   end
 
   defp send_status(
+         token,
          %{
            board_content: board_content,
            winner: winner
@@ -285,7 +338,7 @@ defmodule CodenamesWeb.SlackController do
 
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
-    SlackClient.upload_file(file.path, message, channel)
+    SlackClient.upload_file(file.path, message, channel, token)
   end
 
   defp status_content(game, winner) do
@@ -296,25 +349,27 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
-  def send_help(channel_id, user_id, err \\ nil)
+  def send_help(token, channel_id, user_id, err \\ nil)
 
-  def send_help(channel_id, _, nil),
-    do: SlackClient.send_help(channel_id)
+  def send_help(token, channel_id, _, nil),
+    do: SlackClient.send_help(channel_id, token)
 
-  def send_help(channel_id, user_id, err) when is_binary(err),
-    do: do_send_help(channel_id, err, user_id)
+  def send_help(token, channel_id, user_id, err) when is_binary(err),
+    do: do_send_help(token, channel_id, err, user_id)
 
   def send_help(
+        token,
         channel_id,
         user_id,
         {:ok, %HTTPoison.Response{body: %{"error" => err, "ok" => false}}}
       ),
-      do: do_send_help(channel_id, err, user_id)
+      do: do_send_help(token, channel_id, err, user_id)
 
-  def send_help(channel_id, user_id, {:error, err}), do: do_send_help(channel_id, err, user_id)
+  def send_help(token, channel_id, user_id, {:error, err}),
+    do: do_send_help(token, channel_id, err, user_id)
 
-  def do_send_help(channel_id, content, user_id) do
-    SlackClient.post_ephemeral_message(channel_id, content, user_id)
+  def do_send_help(token, channel_id, content, user_id) do
+    SlackClient.post_ephemeral_message(channel_id, content, user_id, token)
   end
 
   defp get_game(channel_id) do
@@ -342,4 +397,14 @@ defmodule CodenamesWeb.SlackController do
 
   defp get_game_channel_name(game),
     do: "cdnm-#{Timex.format!(game.inserted_at, "%y%m%d%H%M%S", :strftime)}"
+
+  defp get_team_token(team_id) do
+    case Repo.one(from(t in Slack.Team, where: t.team_id == ^team_id)) do
+      nil ->
+        {:error, "Not authenticated"}
+
+      team ->
+        Phoenix.Token.decrypt(CodenamesWeb.Endpoint, @salt, team.token)
+    end
+  end
 end

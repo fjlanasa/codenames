@@ -22,6 +22,7 @@ defmodule CodenamesWeb.Router do
   scope "/slack", CodenamesWeb do
     pipe_through :api
     post "/", SlackController, :handle_message
+    get "/auth", SlackController, :auth
   end
 
   # Other scopes may use custom stacks.
