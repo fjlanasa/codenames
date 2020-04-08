@@ -27,7 +27,7 @@ defmodule CodenamesWeb.SlackController do
                token: Phoenix.Token.encrypt(CodenamesWeb.Endpoint, @salt, token)
              })
            ) do
-      send_resp(conn, 200, "All set!")
+      send_resp(conn, 200, "All set! Type \"/cdnm help\" in Slack for more help.")
     else
       {:error,
        %{
