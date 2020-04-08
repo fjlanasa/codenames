@@ -74,7 +74,7 @@ defmodule CodenamesWeb.SlackController do
     else
       err ->
         IO.inspect(err)
-        send_help(token, channel_id, user_id, err)
+        send_error_message(token, channel_id, user_id, err)
     end
   end
 
@@ -211,7 +211,7 @@ defmodule CodenamesWeb.SlackController do
     else
       err ->
         IO.inspect(err)
-        send_help(channel_id, user_id, err)
+        send_error_message(channel_id, user_id, err)
     end
   end
 
@@ -258,10 +258,10 @@ defmodule CodenamesWeb.SlackController do
 
         send_status(token, status, Repo.get(Game, game.id), message)
       else
-        send_help(channel_id, user_id, "Not a valid guess.")
+        send_error_message(channel_id, user_id, "Not a valid guess.")
       end
     else
-      send_help(channel_id, user_id, "Not your turn.")
+      send_error_message(channel_id, user_id, "Not your turn.")
     end
   end
 
@@ -275,12 +275,12 @@ defmodule CodenamesWeb.SlackController do
       game = Repo.update!(game)
       get_and_send_status(token, game, "#{current_team} passes.")
     else
-      send_help(token, channel_id, user_id)
+      send_error_message(token, channel_id, user_id)
     end
   end
 
   defp execute({"add_player", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
-    send_help(token, channel_id, user_id)
+    send_error_message(token, channel_id, user_id)
   end
 
   defp execute({"quit", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
@@ -295,7 +295,7 @@ defmodule CodenamesWeb.SlackController do
         )
 
       {:error, _changeset} ->
-        send_help(token, channel_id, user_id)
+        send_error_message(token, channel_id, user_id)
     end
   end
 
@@ -305,16 +305,16 @@ defmodule CodenamesWeb.SlackController do
     if game do
       get_and_send_status(token, game)
     else
-      send_help(token, channel_id, user_id)
+      send_error_message(token, channel_id, user_id)
     end
   end
 
   defp execute(
          {"help", _},
-         %{"channel_id" => channel_id, "user_id" => user_id, "reponse_url" => response_url},
+         %{"reponse_url" => response_url},
          token
        ),
-       do: SlackClient.send_help(channel_id, token)
+       do: SlackClient.send_help(response_url, token)
 
   defp get_and_send_status(token, game, message \\ "", message_placement \\ "BEFORE") do
     status = Game.get_status(game)
@@ -353,26 +353,26 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
-  def send_help(token, channel_id, user_id, err \\ nil)
+  def send_error_message(token, channel_id, user_id, err \\ nil)
 
-  def send_help(token, channel_id, user_id, nil),
-    do: do_send_help(token, channel_id, "Something went wrong.", user_id)
+  def send_error_message(token, channel_id, user_id, nil),
+    do: do_send_error_message(token, channel_id, "Something went wrong.", user_id)
 
-  def send_help(token, channel_id, user_id, err) when is_binary(err),
-    do: do_send_help(token, channel_id, err, user_id)
+  def send_error_message(token, channel_id, user_id, err) when is_binary(err),
+    do: do_send_error_message(token, channel_id, err, user_id)
 
-  def send_help(
+  def send_error_message(
         token,
         channel_id,
         user_id,
         {:ok, %HTTPoison.Response{body: %{"error" => err, "ok" => false}}}
       ),
-      do: do_send_help(token, channel_id, err, user_id)
+      do: do_send_error_message(token, channel_id, err, user_id)
 
-  def send_help(token, channel_id, user_id, {:error, err}),
-    do: do_send_help(token, channel_id, err, user_id)
+  def send_error_message(token, channel_id, user_id, {:error, err}),
+    do: do_send_error_message(token, channel_id, err, user_id)
 
-  def do_send_help(token, channel_id, content, user_id) do
+  def do_send_error_message(token, channel_id, content, user_id) do
     SlackClient.post_ephemeral_message(channel_id, content, user_id, token)
   end
 
