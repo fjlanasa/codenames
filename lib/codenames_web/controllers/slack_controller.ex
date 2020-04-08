@@ -218,11 +218,7 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"guess", args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     [guess] = args
     game = get_game(channel_id)
-    player = Repo.one(from(Player, where: [channel_id: ^"#{user_id}"]))
-
-    player_is_up = is_player_up(game, player)
-
-    if not is_nil(game) and is_nil(game.winner) and player_is_up do
+    if not is_nil(game) and is_nil(game.winner) do
       square =
         Repo.one(
           from(Square,
@@ -267,10 +263,9 @@ defmodule CodenamesWeb.SlackController do
 
   defp execute({"pass", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     game = get_game(channel_id)
-    player = get_player(user_id)
     current_team = game.next
 
-    if is_player_up(game, player) do
+    if game do
       game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
       game = Repo.update!(game)
       get_and_send_status(token, game, "#{current_team} passes.")
@@ -378,25 +373,6 @@ defmodule CodenamesWeb.SlackController do
 
   defp get_game(channel_id) do
     Repo.one(from(Game, where: [channel: "slack", channel_id: ^channel_id]))
-  end
-
-  defp get_player(channel_id) do
-    Repo.one(from(Player, where: [channel_id: ^"#{channel_id}"]))
-  end
-
-  defp is_player_up(game, player) do
-    cond do
-      not is_nil(player) and not is_nil(game) and game.blue_player_id == player.id and
-          game.next == "BLUE" ->
-        true
-
-      not is_nil(player) and not is_nil(game) and game.red_player_id == player.id and
-          game.next == "RED" ->
-        true
-
-      true ->
-        false
-    end
   end
 
   defp get_game_channel_name(game),
