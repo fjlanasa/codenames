@@ -64,6 +64,7 @@ defmodule CodenamesWeb.SlackController do
       {:ok, token} ->
         IO.inspect(params)
         handle_actions(params, token)
+
       _ ->
         IO.puts("No auth token")
     end
@@ -71,36 +72,42 @@ defmodule CodenamesWeb.SlackController do
     send_resp(conn, 200, "")
   end
 
-  def handle_actions(%{
-    channel: %{
-      id: channel_id,
-    },
-    user: %{
-      user_id: user_id
-    },
-    actions: [
-      %{
-        value: "pass",
-        type: "button",
-      }
-    ]
-  }, token) do
+  def handle_actions(
+        %{
+          channel: %{
+            id: channel_id
+          },
+          user: %{
+            user_id: user_id
+          },
+          actions: [
+            %{
+              value: "pass",
+              type: "button"
+            }
+          ]
+        },
+        token
+      ) do
     do_execute_pass(channel_id, user_id, token)
   end
 
-  def handle_actions(%{
-    user: %{
-      user_id: user_id
-    },
-    channel: %{
-      id: channel_id,
-    },
-    actions: [
-      %{
-        value: value
-      }
-    ]
-  }, token) do
+  def handle_actions(
+        %{
+          user: %{
+            user_id: user_id
+          },
+          channel: %{
+            id: channel_id
+          },
+          actions: [
+            %{
+              value: value
+            }
+          ]
+        },
+        token
+      ) do
     game = get_game(channel_id)
     do_execute_guess(game, value, user_id, token)
   end
@@ -333,6 +340,7 @@ defmodule CodenamesWeb.SlackController do
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
     SlackClient.upload_file(file.path, message, channel, token)
+
     if not is_nil(status.winner) do
       SlackClient.upload_file(
         Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
