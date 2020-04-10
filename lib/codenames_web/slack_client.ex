@@ -97,7 +97,7 @@ defmodule CodenamesWeb.SlackClient do
             type: "static_select",
             placeholder: %{
               type: "plain_text",
-              text: "Which witch is the witchiest witch?"
+              text: "Select a square"
             },
             action_id: "select_2",
             options:
@@ -111,6 +111,7 @@ defmodule CodenamesWeb.SlackClient do
               type: "plain_text",
               text: "Pass"
             },
+            style: "danger",
             value: "pass",
             action_id: "button_1"
           }
