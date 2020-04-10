@@ -45,6 +45,7 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
+  @spec handle_message(Plug.Conn.t(), map) :: Plug.Conn.t()
   def handle_message(conn, %{"team_id" => team_id} = params) do
     Task.start(fn ->
       case get_team_token(team_id) do
@@ -59,12 +60,11 @@ defmodule CodenamesWeb.SlackController do
     json(conn, %{text: "", response_type: "in_channel"})
   end
 
-  def actions(conn, %{"team_id" => team_id} = params) do
-    case get_team_token(team_id) do
-      {:ok, token} ->
-        IO.inspect(params)
-        handle_actions(params, token)
-
+  def actions(conn, %{"payload" => payload}) do
+    with {:ok, %{"team" => %{"id" => team_id}} = params} <- Jason.decode(payload),
+         {:ok, token} <- get_team_token(team_id) do
+      handle_actions(params, token)
+    else
       _ ->
         IO.puts("No auth token")
     end
@@ -74,18 +74,16 @@ defmodule CodenamesWeb.SlackController do
 
   def handle_actions(
         %{
-          channel: %{
-            id: channel_id
-          },
-          user: %{
-            user_id: user_id
-          },
-          actions: [
+          "actions" => [
             %{
-              value: "pass",
-              type: "button"
+              "type" => "button",
+              "value" => "pass"
             }
-          ]
+          ],
+          "channel" => %{"id" => channel_id},
+          "user" => %{
+            "id" => user_id
+          }
         },
         token
       ) do
@@ -94,22 +92,23 @@ defmodule CodenamesWeb.SlackController do
 
   def handle_actions(
         %{
-          user: %{
-            user_id: user_id
-          },
-          channel: %{
-            id: channel_id
-          },
-          actions: [
+          "actions" => [
             %{
-              value: value
+              "selected_option" => %{
+                "value" => guess
+              },
+              "type" => "static_select"
             }
-          ]
+          ],
+          "channel" => %{"id" => channel_id},
+          "user" => %{
+            "id" => user_id
+          }
         },
         token
       ) do
     game = get_game(channel_id)
-    do_execute_guess(game, value, user_id, token)
+    do_execute_guess(game, guess, user_id, token)
   end
 
   defp do_handle_message(
@@ -349,7 +348,7 @@ defmodule CodenamesWeb.SlackController do
         token
       )
     else
-      IO.inspect(SlackClient.send_square_select_blocks(game.channel_id, status, token))
+      SlackClient.send_square_select_blocks(game.channel_id, status, token)
     end
   end
 

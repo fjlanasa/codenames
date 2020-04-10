@@ -101,7 +101,8 @@ defmodule CodenamesWeb.SlackClient do
             },
             action_id: "select_2",
             options:
-              Enum.map(status.available, fn x ->
+              Enum.sort(status.available, &(&1.word <= &2.word))
+              |> Enum.map(fn x ->
                 %{text: %{type: "plain_text", text: x.word}, value: "#{x.column}#{x.row}"}
               end)
           },
