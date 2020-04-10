@@ -251,6 +251,15 @@ defmodule CodenamesWeb.SlackController do
           end
 
         send_status(token, status, Repo.get(Game, game.id), message)
+
+        if not is_nil(status.winner) do
+          SlackClient.upload_file(
+            Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+            "Here is the key for the game.",
+            game.channel_id,
+            token
+          )
+        end
       else
         send_error_message(channel_id, user_id, "Not a valid guess.")
       end
@@ -336,15 +345,6 @@ defmodule CodenamesWeb.SlackController do
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
     SlackClient.upload_file(file.path, message, channel, token)
-
-    if not is_nil(winner) do
-      SlackClient.upload_file(
-        Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
-        "Here is the key for the game.",
-        channel,
-        token
-      )
-    end
   end
 
   defp status_content(game, winner) do
