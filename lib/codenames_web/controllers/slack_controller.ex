@@ -349,7 +349,7 @@ defmodule CodenamesWeb.SlackController do
         token
       )
     else
-      SlackClient.send_square_select_blocks(game.channel_id, status, token)
+      IO.inspect(SlackClient.send_square_select_blocks(game.channel_id, status, token))
     end
   end
 
