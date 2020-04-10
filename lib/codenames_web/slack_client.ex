@@ -90,34 +90,31 @@ defmodule CodenamesWeb.SlackClient do
   def send_square_select_blocks(channel_id, status, token) do
     blocks = [
       %{
-        type: "section",
-        text: %{
-          type: "mrkdwn",
-          text: "Pick an item from the dropdown",
-          action: %{
+        type: "actions",
+        block_id: "actions1",
+        elements: [
+          %{
             type: "static_select",
-            placeholder: %{type: "plain_text", text: "--"},
+            placeholder: %{
+              type: "plain_text",
+              text: "Which witch is the witchiest witch?"
+            },
+            action_id: "select_2",
             options:
               Enum.map(status.available, fn x ->
                 %{text: %{type: "plain_text", text: x.word}, value: "#{x.column}#{x.row}"}
               end)
-          }
-        }
-      },
-      %{
-        type: "section",
-        text: %{
-          type: "mrkdwn",
-          text: "You can add a button alongside text in your message. "
-        },
-        accessory: %{
-          type: "button",
-          text: %{
-            type: "plain_text",
-            text: "Pass"
           },
-          value: "pass"
-        }
+          %{
+            type: "button",
+            text: %{
+              type: "plain_text",
+              text: "Pass"
+            },
+            value: "pass",
+            action_id: "button_1"
+          }
+        ]
       }
     ]
 
