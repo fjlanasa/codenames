@@ -199,9 +199,6 @@ defmodule CodenamesWeb.SlackController do
              SlackClient.build_header(token)
            ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
-      current_guesser =
-        if game.next == "BLUE", do: blue_player.channel_id, else: red_player.channel_id
-
       get_and_send_status(
         token,
         Repo.get!(Game, game.id),
@@ -339,6 +336,15 @@ defmodule CodenamesWeb.SlackController do
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
     SlackClient.upload_file(file.path, message, channel, token)
+
+    if not is_nil(winner) do
+      SlackClient.upload_file(
+        Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+        "Here is the key for the game.",
+        channel,
+        token
+      )
+    end
   end
 
   defp status_content(game, winner) do
