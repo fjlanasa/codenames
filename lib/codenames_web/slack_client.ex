@@ -87,6 +87,47 @@ defmodule CodenamesWeb.SlackClient do
     )
   end
 
+  def send_square_select_blocks(channel_id, status, token) do
+    blocks = [
+      %{
+        type: "section",
+        text: %{
+          type: "mrkdwn",
+          text: "Pick an item from the dropdown",
+          action: %{
+            type: "static_select",
+            placeholder: %{type: "plain_text", text: "--"},
+            options:
+              Enum.map(status.available, fn x ->
+                %{text: %{type: "plain_text", text: x.word}, value: "#{x.column}#{x.row}"}
+              end)
+          }
+        }
+      },
+      %{
+        type: "section",
+        text: %{
+          type: "mrkdwn",
+          text: "You can add a button alongside text in your message. "
+        },
+        accessory: %{
+          type: "button",
+          text: %{
+            type: "plain_text",
+            text: "Pass"
+          },
+          value: "pass"
+        }
+      }
+    ]
+
+    post(
+      build_url(@post_message_path),
+      Jason.encode!(%{channel: channel_id, text: "", blocks: blocks}),
+      build_header(token)
+    )
+  end
+
   def get_oauth_access(code) do
     post(
       build_url(@oauth_path),

@@ -90,9 +90,16 @@ defmodule Codenames.Game do
     status =
       Enum.reduce(
         squares,
-        %{first_count: 0, second_count: 0, picked_assassin: nil, board_content: ""},
+        %{
+          first_count: 0,
+          second_count: 0,
+          picked_assassin: nil,
+          board_content: "",
+          available: []
+        },
         fn x, acc ->
           %{
+            available: if(x.picked, do: acc.available, else: acc.available ++ [x]),
             first_count:
               if(x.type == first and x.picked, do: acc.first_count + 1, else: acc.first_count),
             second_count:

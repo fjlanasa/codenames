@@ -59,6 +59,52 @@ defmodule CodenamesWeb.SlackController do
     json(conn, %{text: "", response_type: "in_channel"})
   end
 
+  def actions(conn, %{"team_id" => team_id} = params) do
+    case get_team_token(team_id) do
+      {:ok, token} ->
+        IO.inspect(params)
+        handle_actions(params, token)
+      _ ->
+        IO.puts("No auth token")
+    end
+
+    send_resp(conn, 200, "")
+  end
+
+  def handle_actions(%{
+    channel: %{
+      id: channel_id,
+    },
+    user: %{
+      user_id: user_id
+    },
+    actions: [
+      %{
+        value: "pass",
+        type: "button",
+      }
+    ]
+  }, token) do
+    do_execute_pass(channel_id, user_id, token)
+  end
+
+  def handle_actions(%{
+    user: %{
+      user_id: user_id
+    },
+    channel: %{
+      id: channel_id,
+    },
+    actions: [
+      %{
+        value: value
+      }
+    ]
+  }, token) do
+    game = get_game(channel_id)
+    do_execute_guess(game, value, user_id, token)
+  end
+
   defp do_handle_message(
          %{
            "text" => text,
@@ -216,69 +262,11 @@ defmodule CodenamesWeb.SlackController do
     [guess] = args
     game = get_game(channel_id)
 
-    if not is_nil(game) and is_nil(game.winner) do
-      square =
-        Repo.one(
-          from(Square,
-            where: [
-              game: ^game.id,
-              column: ^String.at(guess, 0),
-              row: ^String.at(guess, 1),
-              picked: false
-            ]
-          )
-        )
-
-      if square do
-        square = Ecto.Changeset.change(square, picked: true, picked_by: game.next)
-        square = Repo.update!(square)
-
-        status = Game.get_status(game)
-
-        if not is_nil(status.winner) do
-          game_update = Ecto.Changeset.change(game, winner: status.winner)
-
-          Repo.update!(game_update)
-        end
-
-        message =
-          if square.type != game.next do
-            game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
-            Repo.update!(game_update)
-            "Incorrect! "
-          else
-            "Correct! "
-          end
-
-        send_status(token, status, Repo.get(Game, game.id), message)
-
-        if not is_nil(status.winner) do
-          SlackClient.upload_file(
-            Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
-            "Here is the key for the game.",
-            game.channel_id,
-            token
-          )
-        end
-      else
-        send_error_message(channel_id, user_id, "Not a valid guess.")
-      end
-    else
-      send_error_message(channel_id, user_id, "Not your turn.")
-    end
+    do_execute_guess(game, guess, user_id, token)
   end
 
   defp execute({"pass", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
-    game = get_game(channel_id)
-    current_team = game.next
-
-    if game do
-      game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
-      game = Repo.update!(game)
-      get_and_send_status(token, game, "#{current_team} passes.")
-    else
-      send_error_message(token, channel_id, user_id)
-    end
+    do_execute_pass(channel_id, user_id, token)
   end
 
   defp execute({"add_player", _args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
@@ -328,7 +316,7 @@ defmodule CodenamesWeb.SlackController do
          %{
            board_content: board_content,
            winner: winner
-         },
+         } = status,
          game,
          message,
          message_placement \\ "BEFORE"
@@ -345,6 +333,16 @@ defmodule CodenamesWeb.SlackController do
     channel = game.channel_id
     file = Board.gen_board_image(board_content, game.id)
     SlackClient.upload_file(file.path, message, channel, token)
+    if not is_nil(status.winner) do
+      SlackClient.upload_file(
+        Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
+        "Here is the key for the game.",
+        game.channel_id,
+        token
+      )
+    else
+      SlackClient.send_square_select_blocks(game.channel_id, status, token)
+    end
   end
 
   defp status_content(game, winner) do
@@ -352,6 +350,63 @@ defmodule CodenamesWeb.SlackController do
       "*#{winner} wins!*"
     else
       "#{game.next} is up!"
+    end
+  end
+
+  def do_execute_pass(channel_id, user_id, token) do
+    game = get_game(channel_id)
+    current_team = game.next
+
+    if game do
+      game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+      game = Repo.update!(game)
+      get_and_send_status(token, game, "#{current_team} passes.")
+    else
+      send_error_message(token, channel_id, user_id)
+    end
+  end
+
+  defp do_execute_guess(game, guess, user_id, token) do
+    if not is_nil(game) and is_nil(game.winner) do
+      square =
+        Repo.one(
+          from(Square,
+            where: [
+              game: ^game.id,
+              column: ^String.at(guess, 0),
+              row: ^String.at(guess, 1),
+              picked: false
+            ]
+          )
+        )
+
+      if square do
+        square = Ecto.Changeset.change(square, picked: true, picked_by: game.next)
+        square = Repo.update!(square)
+
+        status = Game.get_status(game)
+
+        if not is_nil(status.winner) do
+          game_update = Ecto.Changeset.change(game, winner: status.winner)
+
+          Repo.update!(game_update)
+        end
+
+        message =
+          if square.type != game.next do
+            game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+            Repo.update!(game_update)
+            "Incorrect! "
+          else
+            "Correct! "
+          end
+
+        send_status(token, status, Repo.get(Game, game.id), message)
+      else
+        send_error_message(game.channel_id, user_id, "Not a valid guess.")
+      end
+    else
+      send_error_message(game.channel_id, user_id, "Not your turn.")
     end
   end
 
