@@ -205,7 +205,7 @@ defmodule CodenamesWeb.SlackController do
       get_and_send_status(
         token,
         Repo.get!(Game, game.id),
-        " <@#{current_guesser}> enter your team's guess.",
+        " use `/cdnm guess [SPACE] to enter a guess.",
         "AFTER"
       )
     else
@@ -218,6 +218,7 @@ defmodule CodenamesWeb.SlackController do
   defp execute({"guess", args}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
     [guess] = args
     game = get_game(channel_id)
+
     if not is_nil(game) and is_nil(game.winner) do
       square =
         Repo.one(
