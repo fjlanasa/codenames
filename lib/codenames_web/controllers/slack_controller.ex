@@ -254,7 +254,7 @@ defmodule CodenamesWeb.SlackController do
       get_and_send_status(
         token,
         Repo.get!(Game, game.id),
-        " use `/cdnm guess [SPACE] to enter a guess.",
+        " Use dropdown or type `/cdnm guess [SPACE]` to enter a guess.",
         "AFTER"
       )
     else
