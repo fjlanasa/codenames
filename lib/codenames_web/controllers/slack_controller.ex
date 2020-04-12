@@ -61,13 +61,15 @@ defmodule CodenamesWeb.SlackController do
   end
 
   def actions(conn, %{"payload" => payload}) do
-    with {:ok, %{"team" => %{"id" => team_id}} = params} <- Jason.decode(payload),
-         {:ok, token} <- get_team_token(team_id) do
-      handle_actions(params, token)
-    else
-      _ ->
-        IO.puts("No auth token")
-    end
+    Task.start(fn ->
+      with {:ok, %{"team" => %{"id" => team_id}} = params} <- Jason.decode(payload),
+           {:ok, token} <- get_team_token(team_id) do
+        handle_actions(params, token)
+      else
+        _ ->
+          IO.puts("No auth token")
+      end
+    end)
 
     send_resp(conn, 200, "")
   end
