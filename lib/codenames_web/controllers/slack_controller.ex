@@ -402,13 +402,14 @@ defmodule CodenamesWeb.SlackController do
         end
 
         message =
-          if square.type != game.next do
-            game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
-            Repo.update!(game_update)
-            "Incorrect! "
-          else
-            "Correct! "
-          end
+          "The guess is #{square.word}. " <>
+            if square.type != game.next do
+              game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
+              Repo.update!(game_update)
+              "Incorrect! "
+            else
+              "Correct! "
+            end
 
         send_status(token, status, Repo.get(Game, game.id), message)
       else
