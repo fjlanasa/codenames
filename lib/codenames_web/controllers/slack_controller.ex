@@ -148,7 +148,6 @@ defmodule CodenamesWeb.SlackController do
 
   defp validate_message({"new", args}) when length(args) >= 2 do
     [blue_player_id, red_player_id | tail] = args
-
     with true <-
            Enum.all?([blue_player_id, red_player_id], fn x ->
              String.match?(x, @player_id_regex)
@@ -245,7 +244,7 @@ defmodule CodenamesWeb.SlackController do
              private_channel_id,
              token
            ),
-         {:ok, _} <-
+         {:ok, game} <-
            Repo.update(Ecto.Changeset.change(game, channel_id: public_channel_id)),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
            SlackClient.post(

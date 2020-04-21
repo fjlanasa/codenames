@@ -119,8 +119,6 @@ defmodule Codenames.Game do
         if square.type != game.next do
           {Repo.update!(Ecto.Changeset.change(game, next: get_opposite_team(game.next))),
            message <> "Incorrect! "}
-
-          "Incorrect! "
         else
           {game, message <> "Correct! "}
         end
