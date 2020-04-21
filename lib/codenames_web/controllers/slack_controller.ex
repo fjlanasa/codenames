@@ -1,6 +1,6 @@
 defmodule CodenamesWeb.SlackController do
   use CodenamesWeb, :controller
-  alias Codenames.{Game, Player, Square, Repo, Board, Slack}
+  alias Codenames.{Game, Player, Repo, Board, Slack}
   alias CodenamesWeb.SlackClient
   import Ecto.Query
   @subcommands ~w(new guess status pass quit add_player help)
@@ -225,7 +225,7 @@ defmodule CodenamesWeb.SlackController do
     {:ok, blue_player} = Player.find_or_create("slack", blue_player_id)
     {:ok, red_player} = Player.find_or_create("slack", red_player_id)
 
-    with {:ok, game} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
+    with {:ok, game, status} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
          {:ok,
           %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
            SlackClient.open_conversation([blue_player_id, red_player_id], token),
@@ -233,7 +233,11 @@ defmodule CodenamesWeb.SlackController do
           %HTTPoison.Response{
             body: %{"ok" => true, "channel" => %{"id" => public_channel_id}}
           }} <-
-           SlackClient.create_conversation(get_game_channel_name(game), token),
+           SlackClient.create_conversation(
+             get_game_channel_name(game),
+             [blue_player_id, red_player_id],
+             token
+           ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
            SlackClient.upload_file(
              Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
@@ -253,9 +257,10 @@ defmodule CodenamesWeb.SlackController do
              SlackClient.build_header(token)
            ),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} do
-      get_and_send_status(
+      send_status(
         token,
-        Repo.get!(Game, game.id),
+        status,
+        game,
         " Use dropdown or type `/cdnm guess [SPACE]` to enter a guess.",
         "AFTER"
       )
@@ -364,12 +369,10 @@ defmodule CodenamesWeb.SlackController do
 
   def do_execute_pass(channel_id, user_id, token) do
     game = get_game(channel_id)
-    current_team = game.next
 
     if game do
-      game = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
-      game = Repo.update!(game)
-      get_and_send_status(token, game, "#{current_team} passes.")
+      {:ok, game, status, message} = Game.execute_pass(game)
+      send_status(token, status, game, message)
     else
       send_error_message(token, channel_id, user_id)
     end
@@ -377,43 +380,12 @@ defmodule CodenamesWeb.SlackController do
 
   defp do_execute_guess(game, guess, user_id, token) do
     if not is_nil(game) and is_nil(game.winner) do
-      square =
-        Repo.one(
-          from(Square,
-            where: [
-              game: ^game.id,
-              column: ^String.at(guess, 0),
-              row: ^String.at(guess, 1),
-              picked: false
-            ]
-          )
-        )
+      case Game.execute_guess(game, guess) do
+        {:ok, game, status, message} ->
+          send_status(token, status, game, message)
 
-      if square do
-        square = Ecto.Changeset.change(square, picked: true, picked_by: game.next)
-        square = Repo.update!(square)
-
-        status = Game.get_status(game)
-
-        if not is_nil(status.winner) do
-          game_update = Ecto.Changeset.change(game, winner: status.winner)
-
-          Repo.update!(game_update)
-        end
-
-        message =
-          "The guess is #{square.word}. " <>
-            if square.type != game.next do
-              game_update = Ecto.Changeset.change(game, next: Game.get_opposite_team(game.next))
-              Repo.update!(game_update)
-              "Incorrect! "
-            else
-              "Correct! "
-            end
-
-        send_status(token, status, Repo.get(Game, game.id), message)
-      else
-        send_error_message(game.channel_id, user_id, "Not a valid guess.")
+        {:error, message} ->
+          send_error_message(game.channel_id, user_id, message)
       end
     else
       send_error_message(game.channel_id, user_id, "Not your turn.")

@@ -71,7 +71,7 @@ defmodule Codenames.Game do
            ),
          _ <-
            Repo.insert_all(Square, gen_squares(game.id, first)) do
-      {:ok, game}
+      {:ok, game, get_status(game)}
     else
       {:error, err} ->
         {:error, err}
@@ -80,6 +80,55 @@ defmodule Codenames.Game do
 
   def get_squares(game) do
     Repo.all(from(s in Square, where: s.game == ^game.id))
+  end
+
+  def execute_pass(game) do
+    current_team = game.next
+    game = Ecto.Changeset.change(game, next: get_opposite_team(game.next))
+    game = Repo.update!(game)
+    {:ok, game, get_status(game), "#{current_team} passes."}
+  end
+
+  def execute_guess(game, guess) do
+    square =
+      Repo.one(
+        from(Square,
+          where: [
+            game: ^game.id,
+            column: ^String.at(guess, 0),
+            row: ^String.at(guess, 1),
+            picked: false
+          ]
+        )
+      )
+
+    if square do
+      square = Ecto.Changeset.change(square, picked: true, picked_by: game.next)
+      square = Repo.update!(square)
+
+      status = get_status(game)
+
+      game =
+        if not is_nil(status.winner),
+          do: Repo.update!(Ecto.Changeset.change(game, winner: status.winner)),
+          else: game
+
+      message = "The guess is #{square.word}. "
+
+      {game, message} =
+        if square.type != game.next do
+          {Repo.update!(Ecto.Changeset.change(game, next: get_opposite_team(game.next))),
+           message <> "Incorrect! "}
+
+          "Incorrect! "
+        else
+          {game, message <> "Correct! "}
+        end
+
+      {:ok, game, status, message}
+    else
+      {:error, "Not a valid guess."}
+    end
   end
 
   def get_status(game) do

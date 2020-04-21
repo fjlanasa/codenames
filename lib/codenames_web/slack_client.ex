@@ -45,10 +45,10 @@ defmodule CodenamesWeb.SlackClient do
     )
   end
 
-  def create_conversation(name, token) do
+  def create_conversation(name, user_ids, token) do
     post(
       build_url(@create_conversations_path),
-      Jason.encode!(%{name: name}),
+      Jason.encode!(%{name: name, user_ids: user_ids}),
       build_header(token)
     )
   end
