@@ -1,9 +1,9 @@
 defmodule CodenamesWeb.SlackController do
   use CodenamesWeb, :controller
-  alias Codenames.{Game, Player, Repo, Board, Slack}
+  alias Codenames.{Game, Player, Repo, Slack}
   alias CodenamesWeb.SlackClient
   import Ecto.Query
-  @subcommands ~w(new guess status pass quit add_player help)
+  @subcommands ~w(new guess status pass quit add_player key help)
   @teams ~w(BLUE RED)
   @columns ~w(A B C D E)
   @rows ~w(1 2 3 4 5)
@@ -39,8 +39,7 @@ defmodule CodenamesWeb.SlackController do
        }} ->
         send_resp(conn, 400, "Your team has already installed this app.")
 
-      err ->
-        IO.inspect(err)
+      _ ->
         send_resp(conn, 400, "Something went wrong.")
     end
   end
@@ -148,6 +147,7 @@ defmodule CodenamesWeb.SlackController do
 
   defp validate_message({"new", args}) when length(args) >= 2 do
     [blue_player_id, red_player_id | tail] = args
+
     with true <-
            Enum.all?([blue_player_id, red_player_id], fn x ->
              String.match?(x, @player_id_regex)
@@ -193,6 +193,8 @@ defmodule CodenamesWeb.SlackController do
 
   defp validate_message({"pass", _}), do: {:ok, []}
 
+  defp validate_message({"key", _}), do: {:ok, []}
+
   defp validate_message({"help", _}), do: {:ok, []}
 
   defp validate_message(_) do
@@ -226,22 +228,21 @@ defmodule CodenamesWeb.SlackController do
 
     with {:ok, game, status} <- Game.new(blue_player.id, red_player.id, "slack", nil, first),
          {:ok,
-          %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
-           SlackClient.open_conversation([blue_player_id, red_player_id], token),
-         {:ok,
           %HTTPoison.Response{
             body: %{"ok" => true, "channel" => %{"id" => public_channel_id}}
           }} <-
            SlackClient.create_conversation(
              get_game_channel_name(game),
-             [blue_player_id, red_player_id],
              token
            ),
+         {:ok,
+          %HTTPoison.Response{body: %{"ok" => true, "channel" => %{"id" => private_channel_id}}}} <-
+           SlackClient.open_conversation([blue_player_id, red_player_id], token),
          {:ok, %HTTPoison.Response{body: %{"ok" => true}}} <-
-           SlackClient.upload_file(
-             Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
-             "Here is the key for the game in <##{public_channel_id}>",
+           SlackClient.broadcast_key(
+             game,
              private_channel_id,
+             "Here is the key for the game in <##{public_channel_id}>. Type `/cdnm key` in the game channel to view there.",
              token
            ),
          {:ok, game} <-
@@ -311,6 +312,17 @@ defmodule CodenamesWeb.SlackController do
     end
   end
 
+  defp execute({"key", _}, %{"channel_id" => channel_id, "user_id" => user_id}, token) do
+    game = get_game(channel_id)
+    player = Repo.get_by(Codenames.Player, channel: "slack", channel_id: user_id)
+
+    if not is_nil(game) and (game.blue_player_id == player.id or game.red_player_id == player.id) do
+      SlackClient.send_key(user_id, game, token)
+    else
+      send_error_message(token, channel_id, user_id, "Not allowed!")
+    end
+  end
+
   defp execute(
          {"help", _},
          %{"response_url" => response_url},
@@ -326,7 +338,6 @@ defmodule CodenamesWeb.SlackController do
   defp send_status(
          token,
          %{
-           board_content: board_content,
            winner: winner
          } = status,
          game,
@@ -342,19 +353,15 @@ defmodule CodenamesWeb.SlackController do
 
     message = message <> "\n\nType `/cdnm help` for help."
 
-    channel = game.channel_id
-    file = Board.gen_board_image(board_content, game.id)
-    SlackClient.upload_file(file.path, message, channel, token)
+    SlackClient.send_status(game, status, message, token)
 
     if not is_nil(status.winner) do
-      SlackClient.upload_file(
-        Board.gen_board_image(Board.build_key(Game.get_squares(game)), game.id).path,
-        "Here is the key for the game.",
+      SlackClient.broadcast_key(
+        game,
         game.channel_id,
+        "Here is the key for the game",
         token
       )
-    else
-      SlackClient.send_square_select_blocks(game.channel_id, status, token)
     end
   end
 

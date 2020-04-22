@@ -45,10 +45,10 @@ defmodule CodenamesWeb.SlackClient do
     )
   end
 
-  def create_conversation(name, user_ids, token) do
+  def create_conversation(name, token) do
     post(
       build_url(@create_conversations_path),
-      Jason.encode!(%{name: name, user_ids: user_ids}),
+      Jason.encode!(%{name: name}),
       build_header(token)
     )
   end
@@ -81,50 +81,165 @@ defmodule CodenamesWeb.SlackClient do
       Jason.encode!(%{
         "response_type" => "in_channel",
         "text" =>
-          "*Commands*\n\n*/cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\n/cdnm new @Joe @Jane RED```\n*/cdnm guess* _space_\n```Makes a guess.\n\nOptions:\n* space: column and row of space\n\nExample:\n/cdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*/cdnm status*```Returns the game's current status```\n*/cdnm quit* ```Ends the current game```\n"
+          "*Commands*\n\n*/cdnm new* _@blue_clue_giver_ _@red_clue_giver_ _first_team_\n```Starts a new game.\n\nOptions:\n* @blue_clue_giver: handle of clue giver for blue team\n* @red_clue_giver: handle of clue giver for red team\n* first_team: BLUE or RED (optional, default BLUE)\n\nExample:\n/cdnm new @Joe @Jane RED```\n*/cdnm guess* _space_\n```Makes a guess.\n\nOptions:\n* space: column and row of space\n\nExample:\n/cdnm guess a3```\n*cdnm pass*```Ends the guessing team's turn```\n*/cdnm status*```Returns the game's current status```\n*/cdnm quit* ```Ends the current game```\n*/cdnm key*```Shows the game's key```\n"
       }),
       build_header(token)
     )
   end
 
-  def send_square_select_blocks(channel_id, status, token) do
-    blocks = [
-      %{
-        type: "actions",
-        block_id: "actions1",
-        elements: [
+  def send_status(
+        game,
+        %{board_content: board_content, available: available},
+        message,
+        token
+      ) do
+    file = Codenames.Board.gen_board_image(board_content, game.id)
+
+    case CodenamesWeb.S3Client.put_board(File.read!(file.path), game.channel_id) do
+      {:ok, url} ->
+        blocks = [
           %{
-            type: "static_select",
-            placeholder: %{
-              type: "plain_text",
-              text: "Select a square"
-            },
-            action_id: "select_2",
-            options:
-              Enum.sort(status.available, &(&1.word <= &2.word))
-              |> Enum.map(fn x ->
-                %{text: %{type: "plain_text", text: x.word}, value: "#{x.column}#{x.row}"}
-              end)
+            type: "section",
+            text: %{
+              type: "mrkdwn",
+              text: message
+            }
           },
           %{
-            type: "button",
-            text: %{
+            type: "image",
+            title: %{
               type: "plain_text",
-              text: "Pass"
+              text: "Current Board",
+              emoji: true
             },
-            style: "danger",
-            value: "pass",
-            action_id: "button_1"
+            image_url: url,
+            alt_text: "Current Board"
+          },
+          %{
+            type: "actions",
+            block_id: "actions1",
+            elements: [
+              %{
+                type: "static_select",
+                placeholder: %{
+                  type: "plain_text",
+                  text: "Select a square"
+                },
+                action_id: "select_2",
+                options:
+                  Enum.sort(available, &(&1.word <= &2.word))
+                  |> Enum.map(fn x ->
+                    %{text: %{type: "plain_text", text: x.word}, value: "#{x.column}#{x.row}"}
+                  end)
+              },
+              %{
+                type: "button",
+                text: %{
+                  type: "plain_text",
+                  text: "Pass"
+                },
+                style: "danger",
+                value: "pass",
+                action_id: "button_1"
+              }
+            ]
           }
         ]
-      }
-    ]
 
-    post(
-      build_url(@post_message_path),
-      Jason.encode!(%{channel: channel_id, text: "", blocks: blocks}),
-      build_header(token)
-    )
+        post(
+          build_url(@post_message_path),
+          Jason.encode!(%{channel: game.channel_id, text: message, blocks: blocks}),
+          build_header(token)
+        )
+
+      {:error, err} ->
+        {:error, err}
+    end
+  end
+
+  def send_key(user_id, game, token) do
+    file =
+      Codenames.Board.gen_board_image(
+        Codenames.Board.build_key(Codenames.Game.get_squares(game)),
+        game.id
+      )
+
+    case CodenamesWeb.S3Client.put_board(File.read!(file.path), game.channel_id) do
+      {:ok, url} ->
+        post(
+          build_url(@post_ephemeral_message_path),
+          Jason.encode!(%{
+            channel: game.channel_id,
+            user: user_id,
+            blocks: [
+              %{
+                type: "section",
+                text: %{
+                  type: "plain_text",
+                  text: "Here is the key for the game",
+                  emoji: true
+                }
+              },
+              %{
+                type: "image",
+                title: %{
+                  type: "plain_text",
+                  text: "Key",
+                  emoji: true
+                },
+                image_url: url,
+                alt_text: "Key"
+              }
+            ]
+          }),
+          build_header(token)
+        )
+
+      {:error, err} ->
+        {:error, err}
+    end
+  end
+
+  def broadcast_key(game, channel_id, message, token) do
+    file =
+      Codenames.Board.gen_board_image(
+        Codenames.Board.build_key(Codenames.Game.get_squares(game)),
+        game.id
+      )
+
+    case CodenamesWeb.S3Client.put_board(File.read!(file.path), channel_id) do
+      {:ok, url} ->
+        post(
+          build_url(@post_message_path),
+          Jason.encode!(%{
+            channel: channel_id,
+            text: "Here is the key for the game",
+            blocks: [
+              %{
+                type: "section",
+                text: %{
+                  type: "mrkdwn",
+                  text: message
+                }
+              },
+              %{
+                type: "image",
+                title: %{
+                  type: "plain_text",
+                  text: "Key",
+                  emoji: true
+                },
+                image_url: url,
+                alt_text: "Key"
+              }
+            ]
+          }),
+          build_header(token)
+        )
+
+      {:error, err} ->
+        {:error, err}
+    end
   end
 
   def get_oauth_access(code) do
