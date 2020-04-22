@@ -261,7 +261,7 @@ defmodule CodenamesWeb.SlackController do
         token,
         status,
         game,
-        " Use dropdown or type `/cdnm guess [SPACE]` to enter a guess.",
+        " Leave your clues in the chat. Use dropdown or type `/cdnm guess [SPACE]` to enter a guess.",
         "AFTER"
       )
     else
